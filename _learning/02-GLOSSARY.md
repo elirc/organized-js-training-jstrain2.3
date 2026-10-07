@@ -57,7 +57,7 @@ Extra mini-example: logging out in one tab logs out another tab immediately.
 
 ## Offline Queue
 Definition: Store failed requests locally and replay later.
-Project example: `queueSync` + `flushSyncQueue`.
+Project example: `queueSync` + `flushSyncQueue`. Autosave queues on a network error or a non-OK status, but replay does not check `response.ok`: `fetch` resolves on a 500, so the item is removed even when the server rejected it again.
 Extra mini-example: mobile app caches "send message" actions offline.
 
 ## IndexedDB
@@ -142,7 +142,7 @@ Extra mini-example: cart total with `reduce` over item prices.
 
 ## Idempotent Read Endpoint
 Definition: Repeated read request gives same result without changing state.
-Project example: `GET /api/workspace`.
+Project example: `GET /api/workspace` for an existing workspace. Note the exception: if the `workspaceId` has no row yet, `getWorkspaceState` (`src/lib/sqlite.js:184-193`) inserts a seeded one, so the first read of a new ID writes to the database.
 Extra mini-example: calling `/api/products` repeatedly doesn’t modify DB.
 
 ## Non-Idempotent Write Endpoint
@@ -172,7 +172,7 @@ Extra mini-example: forms controlled by one state object, not scattered refs.
 
 ## Schema Drift
 Definition: DB schema exists but app usage diverges from it.
-Project example: many relational tables are defined, but primary writes go to `workspace_state` JSON blob.
+Project example: 18 tables are defined, but only `workspace_state` (the JSON blob) and `page_versions` are ever written.
 Extra mini-example: table has `status` column but app stores status in JSON field instead.
 
 ## Technical Debt
@@ -187,7 +187,7 @@ Extra mini-example: collaborative text editor merging edits from two users offli
 
 ## Conflict Resolution
 Definition: Rules for deciding which update wins.
-Project example: `applyRemoteState` keeps newer `meta.updatedAt` state.
+Project example: `applyRemoteState` keeps newer `meta.updatedAt` state. Only the server sets `meta.updatedAt`, and the client never reads the new value back after a save, so in this code two tabs usually carry the same timestamp and ignore each other's edits. A rule is only as good as the clock it compares.
 Extra mini-example: "last write wins" for profile bio updates.
 
 ## Accessibility (A11y)

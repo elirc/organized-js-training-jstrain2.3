@@ -70,6 +70,11 @@ Where:
 Why it helps:
 - Better UX under flaky network conditions.
 
+Caveats in this code:
+- `flushSyncQueue` removes an item after any HTTP response, so a replay that gets a 500 is lost.
+- The draft is preferred only when its `meta.updatedAt` is newer than the server's, which in practice never happens (only the server stamps that field), and a failed server load shows an error instead of the draft.
+- A replayed item is a full workspace snapshot, so replaying an old one overwrites newer server state.
+
 Extra mini-example:
 - Field app stores inspection forms locally and syncs later.
 
@@ -108,6 +113,9 @@ Where:
 
 Why it helps:
 - Very simple convergence strategy for MVP.
+
+Caveat in this code:
+- The timestamp never moves on the client. Edits do not touch `meta.updatedAt`, and the client ignores the value the server returns from `PUT`. Two tabs loaded from the same saved state therefore carry equal timestamps and drop each other's state messages (`src/lib/workspaceStore.js:368-372`). A fix is to bump a client-side revision on every local edit, or to read the server's `updatedAt` back after each save.
 
 Extra mini-example:
 - Last profile edit wins across two browser tabs.
@@ -173,7 +181,7 @@ Better:
 
 ## 6) Schema/Runtime Mismatch
 Issue:
-- Rich relational tables are created in SQLite schema, but app mostly reads/writes `workspace_state` JSON.
+- 18 tables are created in the SQLite schema, but the app reads and writes only `workspace_state` (JSON) and `page_versions`.
 
 Risk:
 - Unused schema complexity; confusion for new contributors.
@@ -183,7 +191,7 @@ Better:
 
 ## 7) Limited Access Control
 Issue:
-- Sharing fields exist but no authenticated policy enforcement.
+- Sharing fields exist (`page.shared` is set from the page header) but no route reads them, and there is no authentication.
 
 Risk:
 - Security model is representational, not enforced.
@@ -209,7 +217,7 @@ Better:
 | Persistence | JSON blob upsert | Fast MVP | Entity-level writes + transactions |
 | API Validation | Manual checks | Basic | Schema validation middleware |
 | UX Inputs | Prompt dialogs | Weak | Modal forms |
-| Offline | IndexedDB queue/drafts | Strong MVP | Conflict-aware replay + retry policy |
+| Offline | IndexedDB queue/drafts | MVP, with gaps (see pattern 5) | Check `response.ok` on replay, conflict-aware replay + retry policy |
 
 ## What To Keep vs Refactor
 Keep:

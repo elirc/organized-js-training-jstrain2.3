@@ -77,8 +77,8 @@ Example: user edits a paragraph block.
 6. API route updates metadata/activity and calls `upsertWorkspaceState(...)`.
 7. `sqlite.js` writes full JSON state into `workspace_state` table.
 8. API responds `{ ok: true }`; UI clears pending-save indicator.
-9. If network fails, payload is queued in IndexedDB (`queueSync`) and replayed on `online`.
-10. Cross-tab updates are sent through `BroadcastChannel` so another open tab sees changes.
+9. If the request fails (network error or non-OK status), payload is queued in IndexedDB (`queueSync`) and replayed on `online` and on the next load. (The `finally` block still updates `lastSavedAt`, so the header shows "Saved" for a queued save.)
+10. The state is also posted on `BroadcastChannel` 500 ms after the change. The receiving tab applies it only if the sender's `meta.updatedAt` is newer (`applyRemoteState`). Because client edits never change `meta.updatedAt`, tabs loaded from the same saved state ignore each other's edits; see section 11.
 
 ## 6) Request/Response Lifecycle (Step-by-Step)
 ### Read flow (`GET /api/workspace`)
@@ -88,13 +88,15 @@ Example: user edits a paragraph block.
   - reads local IndexedDB draft,
   - chooses newest by `meta.updatedAt`.
 - Store is hydrated and app becomes interactive.
+- In practice the server copy wins: only the server stamps `meta.updatedAt`, so a draft's timestamp can equal the server's but not exceed it. If the server request fails, the whole bootstrap fails and the app shows an error rather than the draft.
+- `getWorkspaceState` inserts a freshly seeded workspace when the requested `workspaceId` has no row, so this "read" can write.
 
 ### Write flow (`PUT /api/workspace`)
 - Store changes frequently due user edits.
 - Debounced effect sends serialized state.
 - Server stamps `meta.updatedAt` and appends activity record.
 - SQLite upsert persists state blob.
-- Client updates "Saved" time.
+- Client updates "Saved" time (it does not read the server's new `meta.updatedAt` back into the store).
 
 ### Export flow (`GET /api/export/*`)
 - User clicks export button.
@@ -179,9 +181,12 @@ This is a pragmatic monorepo-style structure suitable for a single-team codebase
 ## 11) Infrastructure Notes and Limits
 - No authentication yet: all requests assume `user-owner` default.
 - No row-level access control enforcement yet.
-- Realtime is cross-tab only (BroadcastChannel), not internet multi-user.
-- Whole workspace save on each autosave can become expensive at scale.
-- Schema has many model tables but current app mostly persists from `workspace_state`.
+- Realtime is cross-tab only (BroadcastChannel), not internet multi-user. Within that, only presence and typing reliably propagate; state messages are usually dropped by the `meta.updatedAt` check in `applyRemoteState` (`src/lib/workspaceStore.js:366-372`).
+- Whole workspace save on each autosave can become expensive at scale, and the last tab to save overwrites the others.
+- `flushSyncQueue` removes a queued item after any HTTP response, including a 500; only a network error keeps it queued.
+- Schema has 18 tables, but the app writes only `workspace_state` and `page_versions`; the other 16 stay empty.
+- Several `package.json` dependencies (`prisma`, `@prisma/client`, `yjs`, `y-websocket`, `uuid`, `date-fns`, `lucide-react`) are not imported anywhere in `src/`.
+- There are no automated tests.
 
 ## 12) If You Were Hardening This for Real Production
 1. Add auth + session-based current user.
